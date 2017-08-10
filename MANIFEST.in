@@ -1,0 +1,3 @@
+include robust_vision_benchmark/VERSION
+include data/
+include bin/

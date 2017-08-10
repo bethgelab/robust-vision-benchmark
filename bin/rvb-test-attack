@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+
+from __future__ import print_function
+
+import argparse
+import subprocess
+import robust_vision_benchmark
+
+
+def test_model(directory, no_cache):
+    print('##### START CHECK ######')
+    print('Analyzing attack in folder "{}"'.format(directory))
+
+    # remove old container if exists
+    subprocess.Popen("docker rm -f rvb-test-attack", shell=True).wait()
+
+    # build container
+    if no_cache:
+        print('Not using cache for docker build')
+        subprocess.Popen(
+            "docker build --no-cache -t rvb-test-attack {}".format(directory),
+            shell=True).wait()
+    else:
+        print('Using cache for docker build (if exists)')
+        subprocess.Popen("docker build -t rvb-test-attack {}".format(
+            directory), shell=True).wait()
+
+    # start model container
+    port = 51220
+    subprocess.Popen(
+        "docker run --expose={port} -d -p {port}:{port} "
+        "-e PORT={port} --name=rvb-test-attack "
+        "rvb-test-attack".format(port=port), shell=True).wait()
+
+    # get IP
+    form = '{{ .NetworkSettings.IPAddress }}'
+    cmd = "docker inspect --format='{}' rvb-test-attack".format(form)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    ip = p.stdout.read()[:-1].decode('UTF-8')
+    print('Received IP of server: ', ip)
+
+    # wait until start of server
+    print('Waiting for server to start.')
+    cmd = 'wget -qO - --tries 30 --retry-connrefused http://{}:{}'.format(
+        ip, port)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    response = p.stdout.read()[:-1].decode('UTF-8')
+    assert response == "Robust Vision Benchmark Attack Server"
+
+    # start client
+    attack = robust_vision_benchmark.BSONAttack(
+        'http://{}:{}'.format(ip, port))
+
+    assert attack.name() == 'BSONAttack'
+    print('Server version', attack.server_version())
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "directory", help="The directory containing the Dockerfile.")
+    parser.add_argument(
+        "--no-cache", action='store_true',
+        help="Disables the cache when building the model image.")
+    args = parser.parse_args()
+    test_model(args.directory, no_cache=args.no_cache)

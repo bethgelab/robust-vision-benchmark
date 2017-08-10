@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+
+from __future__ import print_function
+
+import os
+import argparse
+import subprocess
+import numpy as np
+import foolbox
+import robust_vision_benchmark
+from PIL import Image
+import glob
+
+
+def test_model(directory, no_cache):
+    print('##### START CHECK ######')
+    print('Analyzing model in folder "{}", uses GPU=0.'.format(directory))
+    gpu = 0
+
+    container_name = 'rvb-test-model-container'
+
+    # remove old container if exists
+    subprocess.Popen("docker rm -f {}".format(container_name),
+                     shell=True).wait()
+
+    # build model container
+    if no_cache:
+        print('Not using cache for docker build')
+        subprocess.Popen(
+            "docker build --no-cache -t rvb-test-model {}".format(
+                directory), shell=True).wait()
+    else:
+        print('Using cache for docker build (if exists)')
+        subprocess.Popen(
+            "docker build -t rvb-test-model {}".format(directory),
+            shell=True).wait()
+
+    # start model container
+    port = 61220
+    subprocess.Popen(
+        "NV_GPU={gpu} nvidia-docker run --expose={port} -d -p {port}:{port} "
+        "-e GPU={gpu} -e PORT={port} --name={cn} "
+        "rvb-test-model".format(
+            port=port, gpu=gpu, cn=container_name), shell=True).wait()
+
+    # get IP
+    form = '{{ .NetworkSettings.IPAddress }}'
+    cmd = "docker inspect --format='{}' {}".format(form, container_name)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    ip = p.stdout.read()[:-1].decode('UTF-8')
+    print('Received IP of server: ', ip)
+
+    # wait until start of server
+    print('Waiting for server to start.')
+    cmd = 'wget -qO - --tries 30 --retry-connrefused http://{}:{}'.format(
+        ip, port)
+    subprocess.Popen(cmd, shell=True).wait()
+
+    # start client model
+    model = robust_vision_benchmark.BSONModel('http://{}:{}'.format(ip, port))
+
+    # get predictions and/or gradient for model
+    image_size = model.image_size()
+    channel_axis = model.channel_axis()
+
+    if model.dataset() == 'MNIST':
+        n_channels = 1
+    else:
+        n_channels = 3
+
+    assert channel_axis in [1, 3]
+    if channel_axis == 1:
+        input_shape = (n_channels, image_size, image_size)
+    elif channel_axis == 3:
+        input_shape = (image_size, image_size, n_channels)
+
+    min_, max_ = model.bounds()
+
+    # test predictions_and_gradient function
+    image, label = np.random.uniform(size=input_shape).astype(
+        np.float32) * (max_ - min_) + min_, 1
+    p, g = model.predictions_and_gradient(image, label)
+
+    assert isinstance(p, np.ndarray)
+    assert isinstance(g, np.ndarray)
+    assert np.alltrue(np.array(g.shape) == np.array(input_shape))
+    assert len(p.shape) == 1
+
+    # test bach_prediction function
+    label = np.argmax(p)
+    images = np.random.uniform(
+        size=(2,) + input_shape).astype(np.float32) * (max_ - min_) + min_
+    p = model.batch_predictions(images)
+
+    assert isinstance(p, np.ndarray)
+    assert len(p.shape) == 2
+
+    # test classification accuracy
+    print('####### START TEST CLASSIFICATION ACCURACY ########')
+    acc = 0
+    adv_acc = 0
+    k = 0
+
+    data_path = os.path.dirname(
+        os.path.abspath(robust_vision_benchmark.__file__))
+    data_path = os.path.join(
+        data_path, '..', 'data', model.dataset().lower(), '*.png')
+
+    print(data_path)
+    filenames = glob.glob(data_path)
+    print('found {} images'.format(len(filenames)))
+
+    for filename in filenames:
+        image = Image.open(filename)
+
+        # rescale image & turn into numpy array
+        if model.dataset() == 'IMAGENET':
+            image_size = model.image_size()
+            image = image.resize((image_size, image_size), Image.ANTIALIAS)
+
+        image = np.array(image).astype(np.float32)
+
+        if model.dataset() == 'MNIST':
+            image = image[:, :, None]
+
+        if model.channel_order() == 'BGR':
+            image = image[:, :, ::-1]
+
+        # transpose channels if necessary
+        assert model.channel_axis() in [1, 3]
+        if model.channel_axis() == 1:
+            image = np.transpose(image, [2, 0, 1])
+
+        label = int(os.path.basename(filename).split('.')[0].split('_')[1])
+
+        pred_label = model.batch_predictions(image[None])
+        pred_label = np.argmax(np.squeeze(pred_label))
+
+        if label == pred_label:
+            acc += 1
+
+        # apply simple FGSM attack
+        Attack = foolbox.attacks.FGSM
+        criterion = foolbox.criteria.Misclassification()
+        attack = Attack(model, criterion)
+        adversarial = attack(image=image, label=label, unpack=False)
+
+        if adversarial is None:
+            adv_acc += 1
+            print(';', end="")
+        else:
+            print('.', end="")
+
+        k += 1
+        if k % 25 == 0:
+            print(k, end="")
+
+    print()
+    print('---------------------------------------')
+    print('{} images have been classified correctly.'.format(acc))
+    print('{} adversarial attacks failed.'.format(adv_acc))
+    print()
+    if acc / k < 0.5:
+        print(
+            'Accuracy is below 50%. '
+            'Are you sure the model is working correctly?')
+    else:
+        print('All model tests have been PASSED.')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "directory",
+        help="The directory containing the Dockerfile.")
+    parser.add_argument(
+        "--no-cache", action='store_true',
+        help="Disables the cache when building the model image.")
+    args = parser.parse_args()
+    test_model(args.directory, no_cache=args.no_cache)
