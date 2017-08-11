@@ -8,7 +8,8 @@ import subprocess
 
 def upload(directory):
     input(
-        'Please run check-submission before submitting your model. '
+        'Please run rvb-test-model or rvb-test-attack '
+        'before submitting your model or attack. '
         'Press [Enter] to continue ...')
 
     print('Creating archive for submission in folder "{}"'.format(directory))
@@ -20,7 +21,7 @@ def upload(directory):
         "curl --upload-file ./submission.tar.gz "
         "https://transfer.sh/submission.tar.gz",
         shell=True, stdout=subprocess.PIPE)
-    url = p.stdout.read()[:-1].decode('UTF-8')
+    url = p.stdout.read().decode('UTF-8')
 
     print("Your submission has been uploaded to {}".format(url))
     print(
