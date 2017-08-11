@@ -5,8 +5,7 @@ WORKDIR /root
 
 # install required packages
 RUN pip3 install --no-cache-dir foolbox
-COPY rvb.tar.gz rvb.tar.gz
-RUN pip3 install --no-cache-dir rvb.tar.gz
+RUN pip3 install --no-cache-dir robust_vision_benchmark
 
 # install other python packages
 COPY requirements.txt requirements.txt

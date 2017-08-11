@@ -24,9 +24,7 @@ RUN apt-get update -qq \
 RUN pip3 install --no-cache-dir --upgrade pip
 RUN pip3 install --no-cache-dir setuptools
 RUN pip3 install --no-cache-dir foolbox
-
-COPY rvb.tar.gz rvb.tar.gz
-RUN pip3 install --no-cache-dir rvb.tar.gz
+RUN pip3 install --no-cache-dir robust_vision_benchmark
 
 # install your requirements
 COPY requirements.txt requirements.txt

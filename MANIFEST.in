@@ -1,3 +1,5 @@
 include robust_vision_benchmark/VERSION
-include data/
-include bin/
+include bin/rvb-upload
+include bin/rvb-test-model
+include bin/rvb-test-attack
+recursive-include data *.png

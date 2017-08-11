@@ -59,6 +59,8 @@ def test_model(directory, no_cache):
     # start client model
     model = robust_vision_benchmark.BSONModel('http://{}:{}'.format(ip, port))
 
+    print('Server version', model.server_version())
+
     # get predictions and/or gradient for model
     image_size = model.image_size()
     channel_axis = model.channel_axis()
