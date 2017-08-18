@@ -29,7 +29,7 @@ def mnist_model_server(model, port=None):
         The TCP port used by the HTTP server. Defaults to the PORT environment
         variable or 62222 if not set.
     """
-    return _model_server('MNIST', model, port=port)
+    return _model_server('MNIST', model, image_size=32, port=port)
 
 
 def cifar_model_server(model, channel_order, port=None):
@@ -48,7 +48,7 @@ def cifar_model_server(model, channel_order, port=None):
     """
     assert channel_order in ['RGB', 'BGR']
     return _model_server(
-        'CIFAR', model, channel_order=channel_order, port=port)
+        'CIFAR', model, channel_order=channel_order, image_size=32, port=port)
 
 
 def imagenet_model_server(model, channel_order, image_size, port=None):
