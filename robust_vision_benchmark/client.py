@@ -56,7 +56,8 @@ class HTTPClient(object):
         """
         decoded = {}
         for key in list(encoded.keys()):
-            if encoded[key]['type'] == 'array':
+            if hasattr(encoded[key], 'get') \
+                    and encoded[key].get('type') == 'array':
                 shape = encoded[key]['shape']
                 dtype = encoded[key]['dtype']
                 data = encoded[key]['data']
@@ -106,7 +107,7 @@ class HTTPModel(DifferentiableModel, HTTPClient):
         import requests
         self.requests = requests
 
-        self.__url = url
+        self._base_url = url
 
         bounds = self._remote_bounds()
         channel_axis = self._remote_channel_axis()
@@ -120,7 +121,7 @@ class HTTPModel(DifferentiableModel, HTTPClient):
         self._num_classes = self._remote_num_classes()
 
     def _url(self, path=''):
-        return parse.urljoin(self.__url, path)
+        return parse.urljoin(self._base_url, path)
 
     def _remote_bounds(self):
         s = self._get('/bounds')
@@ -183,6 +184,14 @@ class HTTPModel(DifferentiableModel, HTTPClient):
         gradient = result['gradient']
         return predictions, gradient
 
+    def backward(self, gradient, image):
+        gradient = np.asarray(gradient)
+        image = np.asarray(image)
+        data = {'gradient': gradient, 'image': image}
+        result = self._post('/backward', data)
+        gradient = result['gradient']
+        return gradient
+
 
 class HTTPAttack(Attack, HTTPClient):
     """Base class for attacks that connect to an http server and
@@ -199,12 +208,12 @@ class HTTPAttack(Attack, HTTPClient):
         import requests
         self.requests = requests
 
-        self.__url = attack_url
+        self._base_url = attack_url
 
         super().__init__(model=model, criterion=criterion)
 
     def _url(self, path=''):
-        return parse.urljoin(self.__url, path)
+        return parse.urljoin(self._base_url, path)
 
     def shutdown(self):
         s = self._get('/shutdown')
@@ -219,7 +228,7 @@ class HTTPAttack(Attack, HTTPClient):
         assert a.distance.value == np.inf
         assert a._distance == foolbox.distances.MSE
         assert isinstance(a._criterion, foolbox.criteria.Misclassification)  # noqa: E501
-        assert isinstance(a._model, foolbox.models.BSONModel)
+        assert isinstance(a._model, BSONModel)
 
         image = np.asarray(a.original_image)
         label = np.asarray(a.original_class)

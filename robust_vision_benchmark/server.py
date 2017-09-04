@@ -14,6 +14,8 @@ from PIL import Image
 import numpy as np
 import bson
 
+from .client import BSONModel
+
 import foolbox
 from . import __version__
 
@@ -108,6 +110,8 @@ def _model_server(
         model.batch_predictions, ['predictions'])
     _predictions_and_gradient = _wrap(
         model.predictions_and_gradient, ['predictions', 'gradient'])
+    _backward = _wrap(
+        model.backward, ['gradient'])
 
     @app.route("/")
     def main():  # pragma: no cover
@@ -164,6 +168,10 @@ def _model_server(
     def predictions_and_gradient():
         return _predictions_and_gradient(request)
 
+    @app.route("/backward", methods=['POST'])
+    def backward():
+        return _backward(request)
+
     @app.route("/shutdown", methods=['GET'])
     def shutdown():
         _shutdown_server()
@@ -197,7 +205,7 @@ def attack_server(attack, port=None):
 
     def _run(model_url, image, label, criterion_name):
         # transform the arguments into an Adversarial object
-        model = foolbox.models.BSONModel(model_url)
+        model = BSONModel(model_url)
         assert criterion_name == 'Misclassification'
         criterion = foolbox.criteria.Misclassification()
         adversarial = foolbox.Adversarial(model, criterion, image, label)
@@ -327,8 +335,8 @@ def _encode_arrays(d):
 
 def _decode_arrays(d):
     for key in list(d.keys()):
-        # TODO: shouldn't I check here if d[key] is acutally a dict?
-        if d[key]['type'] == 'array':
+        if hasattr(d[key], 'get') \
+                and d[key].get('type') == 'array':
             shape = d[key]['shape']
             dtype = d[key]['dtype']
             data = d[key]['data']
