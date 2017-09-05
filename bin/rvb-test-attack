@@ -2,12 +2,22 @@
 
 from __future__ import print_function
 
+import threading
 import argparse
 import subprocess
 import robust_vision_benchmark
+import foolbox
+import numpy as np
+
+import sys
+if sys.version_info > (3, 2):
+    from unittest.mock import Mock
+else:
+    # for Python2.7 compatibility
+    from mock import Mock
 
 
-def test_model(directory, no_cache):
+def test_attack(directory, no_cache):
     print('##### START CHECK ######')
     print('Analyzing attack in folder "{}"'.format(directory))
 
@@ -25,19 +35,20 @@ def test_model(directory, no_cache):
         subprocess.Popen("docker build -t rvb-test-attack {}".format(
             directory), shell=True).wait()
 
-    # start model container
+    # start attack container
     port = 51220
     subprocess.Popen(
-        "docker run --expose={port} -d -p {port}:{port} "
+        "docker run --net=host --expose={port} -d -p {port}:{port} "
         "-e PORT={port} --name=rvb-test-attack "
         "rvb-test-attack".format(port=port), shell=True).wait()
 
     # get IP
-    form = '{{ .NetworkSettings.IPAddress }}'
-    cmd = "docker inspect --format='{}' rvb-test-attack".format(form)
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-    ip = p.stdout.read()[:-1].decode('UTF-8')
-    print('Received IP of server: ', ip)
+    # form = '{{ .NetworkSettings.IPAddress }}'
+    # cmd = "docker inspect --format='{}' rvb-test-attack".format(form)
+    # p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    # ip = p.stdout.read()[:-1].decode('UTF-8')
+    # print('Received IP of server: ', ip)
+    ip = 'localhost'
 
     # wait until start of server
     print('Waiting for server to start.')
@@ -47,12 +58,63 @@ def test_model(directory, no_cache):
     response = p.stdout.read()[:-1].decode('UTF-8')
     assert response == "Robust Vision Benchmark Attack Server"
 
-    # start client
+    example_image, _ = foolbox.utils.imagenet_example()
+    example_label = 333
+
+    def create_mock_model():
+        predictions = np.array(
+            [1., 0., 0.5] * 111 + [2.] + [0.3, 0.5, 1.1] * 222)
+        predictions2 = np.array(
+            [1., 0., 0.5] * 111 + [0.] + [0.3, 0.5, 1.1] * 222)
+        model = Mock()
+        model.bounds = Mock(return_value=(0, 255))
+        model.predictions = Mock(
+            side_effect=[predictions] * 5 + [predictions2] * 10)
+        model.batch_predictions = Mock(
+            side_effect=[predictions[np.newaxis]] * 5 +
+            [predictions2[np.newaxis]] * 10)
+        gradient = example_image
+        model.predictions_and_gradient = Mock(return_value=(predictions, gradient))  # noqa: E501
+        model.gradient = Mock(return_value=gradient)
+        model.backward = Mock(return_value=gradient)
+        model.num_classes = Mock(return_value=1000)
+        model.channel_axis = Mock(return_value=3)
+        return model
+
+    print('Creating a mock model')
+    fmodel = create_mock_model()
+
+    print('Starting a model server')
+    from robust_vision_benchmark import imagenet_model_server
+
+    thread = threading.Thread(
+        target=imagenet_model_server,
+        args=(fmodel,),
+        kwargs={'channel_order': 'RGB', 'image_size': 224})
+    thread.daemon = True
+    thread.start()
+    # imagenet_model_server(fmodel, channel_order='RGB', image_size=224)
+
+    print('Connecting to model server')
+    example_model = robust_vision_benchmark.BSONModel('http://localhost:62222')
+
+    criterion = foolbox.criteria.Misclassification()
+
+    print('Connecting to attack server')
     attack = robust_vision_benchmark.BSONAttack(
-        'http://{}:{}'.format(ip, port))
+        'http://{}:{}'.format(ip, port), example_model, criterion)
 
     assert attack.name() == 'BSONAttack'
     print('Server version', attack.server_version())
+
+    print('Running attack on mock model')
+    adv = attack(example_image[:, :, ::-1], example_label, unpack=False)
+    print('adversarial distance', adv.distance)
+
+    print('')
+    print('Test successful')
+    print('')
+    sys.exit()
 
 
 if __name__ == '__main__':
@@ -61,6 +123,6 @@ if __name__ == '__main__':
         "directory", help="The directory containing the Dockerfile.")
     parser.add_argument(
         "--no-cache", action='store_true',
-        help="Disables the cache when building the model image.")
+        help="Disables the cache when building the attack image.")
     args = parser.parse_args()
-    test_model(args.directory, no_cache=args.no_cache)
+    test_attack(args.directory, no_cache=args.no_cache)
