@@ -123,6 +123,10 @@ class HTTPModel(DifferentiableModel, HTTPClient):
     def _url(self, path=''):
         return parse.urljoin(self._base_url, path)
 
+    @property
+    def base_url(self):
+        return self._base_url
+
     def _remote_bounds(self):
         s = self._get('/bounds')
         min_, max_ = s.split('\n')
@@ -232,7 +236,7 @@ class HTTPAttack(Attack, HTTPClient):
 
         image = np.asarray(a.original_image)
         label = np.asarray(a.original_class)
-        model_url = a._model._base_url
+        model_url = a._model.base_url
         criterion_name = 'Misclassification'
 
         data = {
