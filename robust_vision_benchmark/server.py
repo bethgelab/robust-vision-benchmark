@@ -131,11 +131,8 @@ def _model_server(
     @app.route("/bounds", methods=['GET'])
     def bounds():
         min_, max_ = model.bounds()
-        assert min_ == int(min_)
-        assert max_ == int(max_)
-        # the client currently assumes ints
         return Response(
-            '{}\n{}'.format(int(min_), int(max_)), mimetype='text/plain')
+            '{}\n{}'.format(min_, max_), mimetype='text/plain')
 
     @app.route("/channel_axis", methods=['GET'])
     def channel_axis():

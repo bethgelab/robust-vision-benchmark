@@ -130,8 +130,8 @@ class HTTPModel(DifferentiableModel, HTTPClient):
     def _remote_bounds(self):
         s = self._get('/bounds')
         min_, max_ = s.split('\n')
-        min_ = int(min_)
-        max_ = int(max_)
+        min_ = float(min_)
+        max_ = float(max_)
         return (min_, max_)
 
     def _remote_channel_axis(self):
