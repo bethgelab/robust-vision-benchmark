@@ -31,7 +31,7 @@ def mnist_model_server(model, port=None):
         The TCP port used by the HTTP server. Defaults to the PORT environment
         variable or 62222 if not set.
     """
-    return _model_server('MNIST', model, image_size=32, port=port)
+    return _model_server('MNIST', model, image_size=28, port=port)
 
 
 def cifar_model_server(model, channel_order, port=None):
