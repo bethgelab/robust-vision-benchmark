@@ -100,7 +100,7 @@ def _model_server(
     assert dataset in ['MNIST', 'CIFAR', 'IMAGENET']
 
     if port is None:
-        port = os.environ.get('PORT')
+        port = int(os.environ.get('PORT'))
     if port is None:
         port = 62222
 
@@ -194,7 +194,7 @@ def attack_server(attack, port=None):
     assert attack is not None
 
     if port is None:
-        port = os.environ.get('PORT')
+        port = int(os.environ.get('PORT'))
     if port is None:
         port = 52222
 
