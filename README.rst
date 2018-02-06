@@ -12,9 +12,28 @@ Installation
 
 We test using Python 2.7, 3.5 and 3.6. Other Python versions might work as well, but we recommend using Python 3.5 or newer.
 
+Using pip
+^^^^^^^^^
+
 .. code-block:: bash
 
    pip install robust-vision-benchmark
+
+
+Latest version
+^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+   git clone https://github.com/bethgelab/robust-vision-benchmark.git
+   cd robust-vision-benchmark && python setup.py install && cd ..
+
+Now, you need to copy data directory to the installation directory.
+
+.. code-block:: bash
+
+   d=$(python -c "import os, robust_vision_benchmark as rvb; print(os.path.dirname(rvb.__file__))")
+   cp -r robust-vision-benchmark/data $d
 
 Submitting a model
 ------------------

@@ -106,7 +106,7 @@ def test_model(directory, no_cache):
     data_path = os.path.dirname(
         os.path.abspath(robust_vision_benchmark.__file__))
     data_path = os.path.join(
-        data_path, '..', 'data', model.dataset().lower(), '*.png')
+        data_path, 'data', model.dataset().lower(), '*.png')
 
     print(data_path)
     filenames = glob.glob(data_path)
