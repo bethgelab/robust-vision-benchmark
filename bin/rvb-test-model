@@ -133,6 +133,9 @@ def test_model(directory, no_cache):
         if model.channel_axis() == 1:
             image = np.transpose(image, [2, 0, 1])
 
+        # put image in bounds
+        image = image * ((max_ - min_) / 255) + min_
+
         label = int(os.path.basename(filename).split('.')[0].split('_')[1])
 
         pred_label = model.batch_predictions(image[None])
