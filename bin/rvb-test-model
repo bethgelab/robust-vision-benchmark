@@ -13,37 +13,37 @@ import glob
 
 
 def test_model(directory, no_cache):
-    print('##### START CHECK ######')
+    print('##### INITIALIZING DOCKER IMAGE ######')
     print('Analyzing model in folder "{}", uses GPU=0.'.format(directory))
     gpu = 0
 
     container_name = 'rvb-test-model-container'
 
     # remove old container if exists
-    subprocess.Popen("docker rm -f {}".format(container_name),
-                     shell=True).wait()
+    cmd = 'docker rm -f {}'.format(container_name)
+    subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE).wait()
 
     # build model container
     if no_cache:
         print('Not using cache for docker build')
-        subprocess.Popen(
-            "docker build --no-cache -t rvb-test-model {}".format(
-                directory), shell=True).wait()
+        cmd = "docker build --no-cache -t rvb-test-model {}".format(directory)
+        subprocess.Popen(cmd, shell=True).wait()
     else:
         print('Using cache for docker build (if exists)')
-        subprocess.Popen(
-            "docker build -t rvb-test-model {}".format(directory),
-            shell=True).wait()
+        cmd = "docker build -t rvb-test-model {}".format(directory)
+        subprocess.Popen(cmd, shell=True).wait()
 
     # start model container
+    print('##### RUNNING DOCKER CONTAINER ######')
     port = 61220
-    subprocess.Popen(
-        "NV_GPU={gpu} nvidia-docker run --expose={port} -d -p {port}:{port} "
-        "-e GPU={gpu} -e PORT={port} --name={cn} "
-        "rvb-test-model".format(
-            port=port, gpu=gpu, cn=container_name), shell=True).wait()
+    cmd = "NV_GPU={gpu} nvidia-docker run --expose={port} -d -p {port}:{port} "
+    cmd += "-e GPU={gpu} -e PORT={port} --name={cn} rvb-test-model"
+    cmd = cmd.format(port=port, gpu=gpu, cn=container_name)
+    subprocess.Popen(cmd, shell=True).wait()
+    # TODO: attach to container to print output before "  * Running on http://"
 
     # get IP
+    print('##### CONNECTING TO THE RUNNING SERVER ######')
     form = '{{ .NetworkSettings.IPAddress }}'
     cmd = "docker inspect --format='{}' {}".format(form, container_name)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
@@ -52,9 +52,8 @@ def test_model(directory, no_cache):
 
     # wait until start of server
     print('Waiting for server to start.')
-    cmd = 'wget -qO - --tries 30 --retry-connrefused http://{}:{}'.format(
-        ip, port)
-    subprocess.Popen(cmd, shell=True).wait()
+    cmd = 'wget -qO - --tries 30 --retry-connrefused http://{}:{}'
+    subprocess.Popen(cmd.format(ip, port), shell=True).wait()
 
     # start client model
     model = robust_vision_benchmark.BSONModel('http://{}:{}'.format(ip, port))
@@ -62,6 +61,7 @@ def test_model(directory, no_cache):
     print('Server version', model.server_version())
 
     # get predictions and/or gradient for model
+    print('Performing basic checks for the code.')
     image_size = model.image_size()
     channel_axis = model.channel_axis()
 
