@@ -93,6 +93,7 @@ Put the Dockerfile, script, data and other required files into a folder, e.g. *m
 
    rvb-test-model model/
 
+Note that you need to have nvidia-docker installed and in the path for this to run.
 You can find an example in *examples/model/*.
 
 Upload the submission

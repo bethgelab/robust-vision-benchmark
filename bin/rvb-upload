@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import os
 import argparse
 import subprocess
 
@@ -12,15 +13,20 @@ def upload(directory):
         'before submitting your model or attack. '
         'Press [Enter] to continue ...')
 
-    print('Creating archive for submission in folder "{}"'.format(directory))
+    abspath = os.path.abspath(directory)
+    directory, folder = os.path.split(abspath)
+
+    os.chdir(directory)
+    print('Creating archive for submission in folder "{}"'.format(folder))
     subprocess.Popen(
-        "tar czf submission.tar.gz {}".format(directory), shell=True).wait()
+        "tar czf submission.tar.gz {}".format(folder), shell=True).wait()
 
     print('Uploading submission')
     p = subprocess.Popen(
         "curl --upload-file ./submission.tar.gz "
         "https://transfer.sh/submission.tar.gz",
         shell=True, stdout=subprocess.PIPE)
+    p.wait()
     url = p.stdout.read().decode('UTF-8')
 
     print("Your submission has been uploaded to {}".format(url))
