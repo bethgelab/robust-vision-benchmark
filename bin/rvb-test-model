@@ -13,7 +13,7 @@ import glob
 
 
 def test_model(directory, no_cache):
-    print('##### INITIALIZING DOCKER IMAGE ######')
+    print('##### BUILDING DOCKER IMAGE ######')
     print('Analyzing model in folder "{}", uses GPU=0.'.format(directory))
     gpu = 0
 
@@ -40,22 +40,45 @@ def test_model(directory, no_cache):
     cmd += "-e GPU={gpu} -e PORT={port} --name={cn} rvb-test-model"
     cmd = cmd.format(port=port, gpu=gpu, cn=container_name)
     subprocess.Popen(cmd, shell=True).wait()
-    # TODO: attach to container to print output before "  * Running on http://"
+
+    # attach to container to print output in case of failures
+    cmd = "docker attach {}".format(container_name)
+    dump = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE)
 
     # get IP
-    print('##### CONNECTING TO THE RUNNING SERVER ######')
     form = '{{ .NetworkSettings.IPAddress }}'
     cmd = "docker inspect --format='{}' {}".format(form, container_name)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    p.wait()
     ip = p.stdout.read()[:-1].decode('UTF-8')
     print('Received IP of server: ', ip)
 
     # wait until start of server
     print('Waiting for server to start.')
-    cmd = 'wget -qO - --tries 30 --retry-connrefused http://{}:{}'
-    subprocess.Popen(cmd.format(ip, port), shell=True).wait()
+    for i in range(30):
+        # check if the server is up
+        cmd = 'wget -qO - --tries 2 --retry-connrefused http://{}:{}'
+        if subprocess.Popen(cmd.format(ip, port), shell=True).wait() == 0:
+            break
+
+        # check if the container is running
+        form = "{{ .State.Running }}"
+        cmd = "docker inspect --format='{}' {}".format(form, container_name)
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+        p.wait()
+        running = p.stdout.read().decode('UTF-8').strip() == 'true'
+        if not running:
+            # print any errors in the code and exit
+            print(dump.stderr.read().decode('UTF-8'))
+            form = "{{ .State.ExitCode }}"
+            cmd = "docker inspect --format='{}' {}".format(
+                form, container_name)
+            p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+            p.wait()
+            return exit(int(p.stdout.read().decode('UTF-8').strip()))
 
     # start client model
+    print('##### CONNECTING TO THE RUNNING SERVER ######')
     model = robust_vision_benchmark.BSONModel('http://{}:{}'.format(ip, port))
 
     print('Server version', model.server_version())
