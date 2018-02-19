@@ -13,55 +13,78 @@ import glob
 
 
 def test_model(directory, no_cache):
-    print('##### START CHECK ######')
+    print('##### BUILDING DOCKER IMAGE ######')
     print('Analyzing model in folder "{}", uses GPU=0.'.format(directory))
     gpu = 0
 
     container_name = 'rvb-test-model-container'
 
     # remove old container if exists
-    subprocess.Popen("docker rm -f {}".format(container_name),
-                     shell=True).wait()
+    cmd = 'docker rm -f {}'.format(container_name)
+    subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE).wait()
 
     # build model container
     if no_cache:
         print('Not using cache for docker build')
-        subprocess.Popen(
-            "docker build --no-cache -t rvb-test-model {}".format(
-                directory), shell=True).wait()
+        cmd = "docker build --no-cache -t rvb-test-model {}".format(directory)
+        subprocess.Popen(cmd, shell=True).wait()
     else:
         print('Using cache for docker build (if exists)')
-        subprocess.Popen(
-            "docker build -t rvb-test-model {}".format(directory),
-            shell=True).wait()
+        cmd = "docker build -t rvb-test-model {}".format(directory)
+        subprocess.Popen(cmd, shell=True).wait()
 
     # start model container
+    print('##### RUNNING DOCKER CONTAINER ######')
     port = 61220
-    subprocess.Popen(
-        "NV_GPU={gpu} nvidia-docker run --expose={port} -d -p {port}:{port} "
-        "-e GPU={gpu} -e PORT={port} --name={cn} "
-        "rvb-test-model".format(
-            port=port, gpu=gpu, cn=container_name), shell=True).wait()
+    cmd = "NV_GPU={gpu} nvidia-docker run --expose={port} -d -p {port}:{port} "
+    cmd += "-e GPU={gpu} -e PORT={port} --name={cn} rvb-test-model"
+    cmd = cmd.format(port=port, gpu=gpu, cn=container_name)
+    subprocess.Popen(cmd, shell=True).wait()
+
+    # attach to container to print output in case of failures
+    cmd = "docker attach {}".format(container_name)
+    dump = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE)
 
     # get IP
     form = '{{ .NetworkSettings.IPAddress }}'
     cmd = "docker inspect --format='{}' {}".format(form, container_name)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    p.wait()
     ip = p.stdout.read()[:-1].decode('UTF-8')
     print('Received IP of server: ', ip)
 
     # wait until start of server
     print('Waiting for server to start.')
-    cmd = 'wget -qO - --tries 30 --retry-connrefused http://{}:{}'.format(
-        ip, port)
-    subprocess.Popen(cmd, shell=True).wait()
+    for i in range(30):
+        # check if the server is up
+        cmd = 'wget -qO - --tries 2 --retry-connrefused http://{}:{}'
+        if subprocess.Popen(cmd.format(ip, port), shell=True).wait() == 0:
+            break
+
+        # check if the container is running
+        form = "{{ .State.Running }}"
+        cmd = "docker inspect --format='{}' {}".format(form, container_name)
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+        p.wait()
+        running = p.stdout.read().decode('UTF-8').strip() == 'true'
+        if not running:
+            # print any errors in the code and exit
+            print(dump.stderr.read().decode('UTF-8'))
+            form = "{{ .State.ExitCode }}"
+            cmd = "docker inspect --format='{}' {}".format(
+                form, container_name)
+            p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+            p.wait()
+            return exit(int(p.stdout.read().decode('UTF-8').strip()))
 
     # start client model
+    print('##### CONNECTING TO THE RUNNING SERVER ######')
     model = robust_vision_benchmark.BSONModel('http://{}:{}'.format(ip, port))
 
     print('Server version', model.server_version())
 
     # get predictions and/or gradient for model
+    print('Performing basic checks for the code.')
     image_size = model.image_size()
     channel_axis = model.channel_axis()
 
@@ -106,7 +129,7 @@ def test_model(directory, no_cache):
     data_path = os.path.dirname(
         os.path.abspath(robust_vision_benchmark.__file__))
     data_path = os.path.join(
-        data_path, '..', 'data', model.dataset().lower(), '*.png')
+        data_path, 'data', model.dataset().lower(), '*.png')
 
     print(data_path)
     filenames = glob.glob(data_path)
@@ -132,6 +155,9 @@ def test_model(directory, no_cache):
         assert model.channel_axis() in [1, 3]
         if model.channel_axis() == 1:
             image = np.transpose(image, [2, 0, 1])
+
+        # put image in bounds
+        image = image * ((max_ - min_) / 255) + min_
 
         label = int(os.path.basename(filename).split('.')[0].split('_')[1])
 
